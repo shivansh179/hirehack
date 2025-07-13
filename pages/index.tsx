@@ -30,6 +30,16 @@ export default function Home() {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const utteranceQueue = useRef<SpeechSynthesisUtterance[]>([]);
 
+
+  const [audioInit, setAudioInit] = useState(false);
+
+const initAudio = () => {
+  window.speechSynthesis.cancel();
+  initVoices(); // Now safe after user action
+  setAudioInit(true);
+};
+
+
   /* ------------------------------------------------------------------ */
   /*                             UTILITIES                              */
   /* ------------------------------------------------------------------ */
@@ -261,10 +271,19 @@ export default function Home() {
         return '💬 Ready to chat';
     }
   };
-
-  if (!isClient) {
-    return <div className="flex min-h-screen items-center justify-center bg-gray-900 text-white">Loading...</div>;
+  if (!isClient || !audioInit) {
+    return (
+      <main className="flex items-center justify-center min-h-screen bg-black text-white">
+        <button
+          onClick={initAudio}
+          className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg text-lg font-semibold shadow-lg"
+        >
+          🎤 Start Assistant
+        </button>
+      </main>
+    );
   }
+  
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 text-white">
