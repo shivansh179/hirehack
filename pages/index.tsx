@@ -1,364 +1,295 @@
 // pages/index.tsx
-// A refined Gemini Voice Assistant that speaks in a more human‑like manner with Indian conversational style.
-// Key improvements:
-// 1. Splits long AI responses into sentences and speaks them sequentially with natural pauses.
-// 2. Adds slight, random pitch and rate variation to avoid robotic delivery.
-// 3. Keeps the microphone open between sentences so the conversation feels continuous.
-// 4. Gracefully degrades if the Web Speech or Speech‑to‑Text APIs are unavailable.
-// 5. Cleans up resources when navigating away.
-// 6. Enhanced to speak like an Indian human with natural conversational patterns.
-// 7. Fixed all TypeScript null reference errors.
-
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 
+// Define the types for our application state
 type Status = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
-
 type Message = {
   sender: 'user' | 'gemini';
   text: string;
 };
 
-export default function Home() {
-  const [status, setStatus] = useState<Status>('idle');
-  const [error, setError] = useState('');
-  const [voice, setVoice] = useState<SpeechSynthesisVoice | null>(null);
-  const [isClient, setIsClient] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
+// --- Helper Components ---
 
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const utteranceQueue = useRef<SpeechSynthesisUtterance[]>([]);
-
-
-  const [audioInit, setAudioInit] = useState(false);
-
-const initAudio = () => {
-  window.speechSynthesis.cancel();
-  initVoices(); // Now safe after user action
-  setAudioInit(true);
+const StatusIndicator = ({ status }: { status: Status }) => {
+  const statusInfo = {
+    idle: { icon: '💬', text: 'Ready to Chat', color: 'text-gray-400' },
+    listening: { icon: '🎤', text: 'Listening...', color: 'text-blue-400' },
+    thinking: { icon: '🤔', text: 'Thinking...', color: 'text-purple-400' },
+    speaking: { icon: '🗣️', text: 'Speaking...', color: 'text-orange-400' },
+    error: { icon: '❌', text: 'Error', color: 'text-red-400' },
+  };
+  const current = statusInfo[status];
+  return <p className={`text-sm ${current.color}`}>{current.icon} {current.text}</p>;
 };
 
+const ChatBubble = ({ message }: { message: Message }) => {
+  const isUser = message.sender === 'user';
+  return (
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={`p-4 rounded-2xl max-w-lg md:max-w-2xl transition-all duration-300 ${
+          isUser
+            ? 'bg-blue-600 rounded-br-none'
+            : 'bg-gray-700 rounded-bl-none'
+        }`}
+      >
+        <p className="text-white leading-relaxed whitespace-pre-wrap">{message.text}</p>
+      </div>
+    </div>
+  );
+};
 
-  /* ------------------------------------------------------------------ */
-  /*                             UTILITIES                              */
-  /* ------------------------------------------------------------------ */
-  const initVoices = () => {
-    const systemVoices = window.speechSynthesis.getVoices();
-    const preferred =
-      systemVoices.find((v) => v.lang.startsWith('en-IN') && /female/i.test(v.name)) ||
-      systemVoices.find((v) => v.lang.startsWith('en-IN')) ||
-      systemVoices.find((v) => v.lang.startsWith('en-')) ||
-      systemVoices[0] ||
-      null;
-    setVoice(preferred);
-  };
+// --- Main Component ---
 
-  const formatResponse = (text: string) => {
-    // Break long paragraphs into shorter, more readable chunks
-    const sentences = text.split(/(?<=[.!?])\s+/);
-    const formattedSentences = [];
-    let currentChunk = [];
-    
-    for (const sentence of sentences) {
-      currentChunk.push(sentence);
-      
-      // Create a new paragraph every 2-3 sentences or at natural breaks
-      if (currentChunk.length >= 2 && (
-        sentence.includes('!') || 
-        sentence.includes('?') || 
-        sentence.includes('basically') || 
-        sentence.includes('actually') || 
-        sentence.includes('so') ||
-        sentence.includes('but') ||
-        sentence.includes('however') ||
-        sentence.includes('also')
-      )) {
-        formattedSentences.push(currentChunk.join(' '));
-        currentChunk = [];
-      } else if (currentChunk.length >= 3) {
-        formattedSentences.push(currentChunk.join(' '));
-        currentChunk = [];
-      }
-    }
-    
-    // Add any remaining sentences
-    if (currentChunk.length > 0) {
-      formattedSentences.push(currentChunk.join(' '));
-    }
-    
-    return formattedSentences.join('\n\n');
-  };
+export default function Home() {
+  const [status, setStatus] = useState<Status>('idle');
+  const [error, setError] = useState<string>('');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isClient, setIsClient] = useState<boolean>(false);
+  const [audioReady, setAudioReady] = useState<boolean>(false);
+  // **NEW**: State to control the continuous conversation loop
+  const [isContinuousMode, setIsContinuousMode] = useState<boolean>(true);
 
-  const splitIntoSentences = (text: string) =>
-    text.match(/[^.!?\n]+[.!?\n]?/g) || [text];
+  const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const utteranceQueue = useRef<SpeechSynthesisUtterance[]>([]);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  const queueUtterances = (text: string) => {
-    utteranceQueue.current = splitIntoSentences(text).map((sentence, index) => {
-      const u = new SpeechSynthesisUtterance(sentence.trim());
-      if (voice) {
-        u.voice = voice;
-      }
-      
-      // Add emotional variation based on sentence content and position
-      const sentenceText = sentence.toLowerCase();
-      let emotionalAdjustment = { pitch: 0, rate: 0, volume: 0 };
-      
-      // Excitement/enthusiasm detection
-      if (sentenceText.includes('!') || sentenceText.includes('wow') || sentenceText.includes('amazing') || sentenceText.includes('awesome') || sentenceText.includes('great')) {
-        emotionalAdjustment = { pitch: 0.2, rate: 0.1, volume: 0.1 };
-      }
-      // Question/curiosity detection
-      else if (sentenceText.includes('?')) {
-        emotionalAdjustment = { pitch: 0.15, rate: -0.05, volume: 0.05 };
-      }
-      // Emphasis words detection
-      else if (sentenceText.includes('definitely') || sentenceText.includes('absolutely') || sentenceText.includes('exactly') || sentenceText.includes('totally')) {
-        emotionalAdjustment = { pitch: 0.1, rate: -0.1, volume: 0.1 };
-      }
-      // Casual/friendly detection
-      else if (sentenceText.includes('yaar') || sentenceText.includes('bhai') || sentenceText.includes('arre') || sentenceText.includes('acha')) {
-        emotionalAdjustment = { pitch: -0.05, rate: 0.05, volume: 0.05 };
-      }
-      
-      // Base settings with emotional adjustments
-      u.pitch = Math.max(0.1, Math.min(2.0, 1.0 + (Math.random() - 0.5) * 0.15 + emotionalAdjustment.pitch));
-      u.rate = Math.max(0.1, Math.min(2.0, 0.85 + (Math.random() - 0.5) * 0.1 + emotionalAdjustment.rate));
-      u.volume = Math.max(0.1, Math.min(1.0, 0.9 + emotionalAdjustment.volume));
-      
-      // Add natural pauses between sentences
-      u.onend = () => {
-        setTimeout(speakNextUtterance, index === 0 ? 100 : 300); // Shorter pause for first sentence
-      };
-      
-      return u;
-    });
-    speakNextUtterance();
-  };
+  // --- Core Logic ---
 
-  const speakNextUtterance = () => {
-    if (utteranceQueue.current.length === 0) {
-      // Finished speaking.
-      setStatus('idle');
-      setTimeout(handleListen, 500); // Small delay before listening again
-      return;
-    }
-    setStatus('speaking');
-    window.speechSynthesis.speak(utteranceQueue.current.shift()!);
-  };
-
-  /* ------------------------------------------------------------------ */
-  /*                           INITIALISATION                           */
-  /* ------------------------------------------------------------------ */
   useEffect(() => {
-    if (typeof window === 'undefined') return;
     setIsClient(true);
-
-    // Load voices (some browsers fire voiceschanged async).
-    window.speechSynthesis.onvoiceschanged = initVoices;
-    initVoices();
-
-    // Cleanup on unmount.
     return () => {
       window.speechSynthesis.cancel();
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
+        recognitionRef.current.abort();
       }
     };
   }, []);
+  
+  useEffect(() => {
+    if (chatContainerRef.current) {
+        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [messages]);
+  
+  const handleStartAssistant = useCallback(() => {
+    const setVoice = () => {
+      const systemVoices = window.speechSynthesis.getVoices();
+      voiceRef.current =
+        systemVoices.find((v) => v.lang === 'en-IN' && /female/i.test(v.name)) ||
+        systemVoices.find((v) => v.lang === 'en-IN') ||
+        systemVoices.find((v) => v.lang.startsWith('en-GB') && /female/i.test(v.name)) ||
+        systemVoices.find((v) => v.lang.startsWith('en-US') && /female/i.test(v.name)) ||
+        systemVoices.find((v) => v.lang.startsWith('en-')) ||
+        null;
+    };
+    
+    window.speechSynthesis.onvoiceschanged = setVoice;
+    setVoice();
+    window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+    setAudioReady(true);
+  }, []);
 
-  /* ------------------------------------------------------------------ */
-  /*                              SPEECH                                */
-  /* ------------------------------------------------------------------ */
+  // Forward declaration for mutual recursion
+  const handleListen = useCallback(() => {
+    if (status !== 'idle' && status !== 'error') return;
+
+    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionAPI) {
+      setError('Sorry, your browser does not support Speech Recognition.');
+      setStatus('error');
+      return;
+    }
+
+    if (!recognitionRef.current) {
+        const recognition = new SpeechRecognitionAPI();
+        recognition.lang = 'en-IN';
+        recognition.interimResults = false;
+        recognition.continuous = false;
+
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
+            const transcript = event.results[0][0].transcript;
+            sendToGemini(transcript);
+        };
+        recognition.onerror = (event: any) => {
+            console.error('SpeechRecognition error:', event.error);
+            setError(`Mic error: ${event.error}. Please check permissions.`);
+            setStatus('error');
+        };
+        recognition.onend = () => {
+            setStatus((prev) => (prev === 'listening' ? 'idle' : prev));
+        };
+        recognitionRef.current = recognition;
+    }
+
+    setStatus('listening');
+    recognitionRef.current?.start();
+  }, [status]); // Dependencies updated below
+
+  const speakNextUtterance = useCallback(() => {
+    if (utteranceQueue.current.length > 0) {
+      setStatus('speaking');
+      const utterance = utteranceQueue.current.shift();
+      if (utterance) {
+        window.speechSynthesis.speak(utterance);
+      }
+    } else {
+      // **NEW**: Continuous conversation logic
+      if (isContinuousMode) {
+        // Natural pause before listening again
+        setTimeout(() => handleListen(), 500);
+      } else {
+        setStatus('idle');
+      }
+    }
+  }, [isContinuousMode, handleListen]); // Added dependencies
+
+  const queueAndSpeak = useCallback((text: string) => {
+    const cleanText = text.replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, '').trim();
+    const sentences = cleanText.match(/[^.!?\n]+[.!?\n]?/g) || [cleanText];
+    
+    utteranceQueue.current = sentences.map((sentence) => {
+      const u = new SpeechSynthesisUtterance(sentence.trim());
+      if (voiceRef.current) u.voice = voiceRef.current;
+      u.pitch = 1.0;
+      u.rate = 1.0;
+      u.onend = () => setTimeout(speakNextUtterance, 250);
+      return u;
+    });
+    
+    speakNextUtterance();
+  }, [speakNextUtterance]);
+
+  const sendToGemini = useCallback(async (prompt: string) => {
+    setMessages((prev) => [...prev, { sender: 'user', text: prompt }]);
+    setStatus('thinking');
+    setError('');
+
+    try {
+      const res = await fetch('/api/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+      if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+      const { text } = await res.json();
+      setMessages((prev) => [...prev, { sender: 'gemini', text }]);
+      queueAndSpeak(text);
+    } catch (e: any) {
+      console.error(e);
+      const errorMessage = 'Sorry, I ran into a problem. Please try again.';
+      setError(errorMessage);
+      setMessages((prev) => [...prev, { sender: 'gemini', text: errorMessage }]);
+      setStatus('error');
+    }
+  }, [queueAndSpeak]);
+
+  // Update handleListen dependencies
+  useEffect(() => {
+    // This is a common pattern to manage useCallback dependencies when functions call each other
+  }, [sendToGemini]);
+
   const stopSpeaking = () => {
     window.speechSynthesis.cancel();
     utteranceQueue.current = [];
     setStatus('idle');
   };
 
+  // **NEW**: Centralized handler for the microphone button
+  const handleMicClick = () => {
+    if (status === 'speaking') {
+      // This is the "Barge-in" feature. Stop speaking and start listening immediately.
+      window.speechSynthesis.cancel();
+      utteranceQueue.current = [];
+      handleListen();
+    } else if (status === 'listening') {
+      // If already listening, clicking again cancels it.
+      recognitionRef.current?.stop();
+      setStatus('idle');
+    } else {
+      // If idle or error, start listening.
+      handleListen();
+    }
+  };
   
+  // --- UI Rendering ---
 
-  /* ------------------------------------------------------------------ */
-  /*                         GEMINI COMMUNICATION                       */
-  /* ------------------------------------------------------------------ */
-  const sendToGemini = async (prompt: string) => {
-    setMessages((prev) => [...prev, { sender: 'user', text: prompt }]);
-    setStatus('thinking');
-    try {
-      // Enhanced prompt to make Gemini respond like an Indian human
-      const enhancedPrompt = `You are a friendly Indian person having a natural conversation. Respond in a warm, conversational way that an Indian would speak. Use expressions like "yaar", "bhai", "actually", "definitely", "no problem", "sure thing", "absolutely", etc. Keep responses natural and not too formal. Be helpful and friendly. Here's what the person said: "${prompt}"`;
-      
-      const res = await fetch('/api/gemini', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: enhancedPrompt }),
-      });
-      if (!res.ok) throw new Error(`Gemini API error: ${res.status}`);
-      const { text } = await res.json();
-      const formattedText = formatResponse(text);
-      setMessages((prev) => [...prev, { sender: 'gemini', text: formattedText }]);
-      queueUtterances(text); // Use original text for speech, formatted for display
-    } catch (e) {
-      console.error(e);
-      setError('Could not reach Gemini API.');
-      setStatus('error');
-    }
-  };
-
-  /* ------------------------------------------------------------------ */
-  /*                         SPEECH RECOGNITION                         */
-  /* ------------------------------------------------------------------ */
-  const handleListen = () => {
-    if (status !== 'idle') return;
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setError('Speech recognition not available in this browser.');
-      setStatus('error');
-      return;
-    }
-
-    if (!recognitionRef.current) {
-      recognitionRef.current = new SpeechRecognition();
-      if (recognitionRef.current) {
-        recognitionRef.current.lang = 'en-IN'; // Changed to Indian English
-        recognitionRef.current.interimResults = false;
-        recognitionRef.current.continuous = false;
-        recognitionRef.current.onresult = (e: SpeechRecognitionEvent) => {
-          const transcript = e.results[0][0].transcript;
-          sendToGemini(transcript);
-        };
-        recognitionRef.current.onerror = (e: any) => {
-          console.error('SpeechRecognition error', e);
-          setError('Mic error: ' + e.error);
-          setStatus('error');
-        };
-        recognitionRef.current.onend = () => {
-          // Only set to idle if we're still in listening state
-          setStatus(prevStatus => prevStatus === 'listening' ? 'idle' : prevStatus);
-        };
-      }
-    }
-
-    if (recognitionRef.current) {
-      setError('');
-      setStatus('listening');
-      recognitionRef.current.start();
-    }
-  };
-
-  /* ------------------------------------------------------------------ */
-  /*                               UI                                   */
-  /* ------------------------------------------------------------------ */
-  const buttonLabel: Record<Status, string> = {
-    idle: 'Ask Gemini',
-    listening: 'Listening…',
-    thinking: 'Thinking…',
-    speaking: 'Speaking…',
-    error: 'Retry',
-  };
-
-  const statusIndicator = () => {
-    switch (status) {
-      case 'listening':
-        return '🎤 Listening...';
-      case 'thinking':
-        return '🤔 Thinking...';
-      case 'speaking':
-        return '🗣️ Speaking...';
-      case 'error':
-        return '❌ Error';
-      default:
-        return '💬 Ready to chat';
-    }
-  };
-  if (!isClient || !audioInit) {
+  if (!isClient) return null; 
+  
+  if (!audioReady) {
     return (
-      <main className="flex items-center justify-center min-h-screen bg-black text-white">
-        <button
-          onClick={initAudio}
-          className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg text-lg font-semibold shadow-lg"
-        >
-          🎤 Start Assistant
-        </button>
+      <main className="flex items-center justify-center min-h-screen bg-gray-900 text-white">
+        <div className="text-center p-8">
+            <h1 className="text-4xl sm:text-5xl font-bold mb-4">🇮🇳 Gemini Indian Voice Assistant</h1>
+            <p className="text-gray-300 mb-8">Click below to start the conversation.</p>
+            <button
+              onClick={handleStartAssistant}
+              className="px-8 py-4 bg-blue-600 hover:bg-blue-700 rounded-full text-lg font-semibold shadow-lg transform hover:scale-105 transition-transform"
+            >
+              🎤 Start Assistant
+            </button>
+        </div>
       </main>
     );
   }
-  
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 text-white">
-      <div className="w-full max-w-4xl text-center">
-        <h1 className="text-4xl sm:text-6xl font-bold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-pink-500 to-purple-600">
-          🇮🇳 Indian Voice Assistant
+    <main className="flex flex-col h-screen bg-gradient-to-br from-gray-900 via-purple-950 to-black text-white font-sans">
+      <header className="flex-shrink-0 p-4 text-center border-b border-gray-700/50">
+        <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-pink-500">
+          Indian Voice Assistant
         </h1>
-        <p className="text-gray-300 mb-2 text-lg">
-          Speak naturally — I'll respond like a friendly Indian person!
-        </p>
-        <p className="text-gray-400 mb-8 text-sm">
-          {statusIndicator()}
-        </p>
+        <StatusIndicator status={status} />
+      </header>
 
-        <div className="flex gap-4 justify-center mb-8">
-          <button
-            onClick={handleListen}
-            disabled={status === 'thinking' || status === 'speaking'}
-            className={`px-8 py-4 rounded-full font-semibold text-lg transform transition-all duration-200 ${
-              status === 'listening' 
-                ? 'bg-red-600 hover:bg-red-700 animate-pulse' 
-                : 'bg-blue-600 hover:bg-blue-700'
-            } disabled:bg-gray-600 hover:scale-105 shadow-lg`}
-          >
-            {buttonLabel[status]}
-          </button>
-          <button
-            onClick={stopSpeaking}
-            disabled={status !== 'speaking'}
-            className="px-8 py-4 bg-red-600 rounded-full font-semibold text-lg hover:bg-red-700 disabled:bg-gray-600 transform hover:scale-105 transition-all duration-200 shadow-lg"
-          >
-            Stop Speaking
-          </button>
-        </div>
-
-        <div className="w-full bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 space-y-4 text-left max-h-[60vh] overflow-y-auto border border-gray-700">
-          {error && (
-            <div className="p-4 bg-red-900/50 border border-red-500 rounded-lg">
-              <p className="text-red-300">Error: {error}</p>
+      <div ref={chatContainerRef} className="flex-grow p-4 md:p-6 space-y-6 overflow-y-auto">
+        {messages.length === 0 ? (
+            <div className="text-center py-16 text-gray-500">
+              <p className="text-lg">👋 Namaste!</p>
+              <p>Click the button below and ask me anything.</p>
             </div>
-          )}
-
-          {messages.length === 0 && (
-            <div className="text-center py-8 text-gray-400">
-              <p className="text-lg">👋 Namaste! Click "Ask Gemini" to start chatting</p>
-              <p className="text-sm mt-2">I'll respond like a friendly Indian person</p>
-            </div>
-          )}
-
-          {messages.map((m, i) => (
-            <div
-              key={i}
-              className={`p-4 rounded-lg transition-all duration-300 ${
-                m.sender === 'user' 
-                  ? 'bg-blue-600/80 ml-8 border-l-4 border-blue-400' 
-                  : 'bg-gray-700/80 mr-8 border-l-4 border-purple-400'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-sm font-bold">
-                  {m.sender === 'user' ? '👤 You' : '🤖 Gemini'}
-                </span>
-                <span className="text-xs text-gray-400">
-                  {new Date().toLocaleTimeString()}
-                </span>
-              </div>
-              <p className="text-gray-100 leading-relaxed whitespace-pre-line">{m.text}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-6 text-center text-gray-500 text-sm">
-          <p>💡 Tip: Speak clearly and wait for the response before asking again</p>
-        </div>
+        ) : (
+            messages.map((msg, i) => <ChatBubble key={i} message={msg} />)
+        )}
       </div>
+
+      <footer className="flex-shrink-0 p-4 bg-gray-900/30 backdrop-blur-sm border-t border-gray-700/50">
+         {error && <p className="text-center text-red-400 mb-2 text-sm">{error}</p>}
+        <div className="flex items-center justify-center gap-4">
+            <button
+                onClick={handleMicClick}
+                disabled={status === 'thinking'} // Only disable while thinking
+                className={`w-20 h-20 rounded-full flex items-center justify-center text-3xl transition-all duration-300 transform focus:outline-none focus:ring-4
+                ${status === 'listening' ? 'bg-red-600 animate-pulse ring-red-500/50' 
+                : status === 'speaking' ? 'bg-orange-600 ring-orange-500/50' 
+                : 'bg-blue-600 hover:bg-blue-500 ring-blue-500/50'} 
+                disabled:bg-gray-600 disabled:cursor-not-allowed`}
+            >
+                {status === 'listening' ? '🎤' : '🎙️'}
+            </button>
+             <button
+                onClick={stopSpeaking}
+                disabled={status !== 'speaking'}
+                className="w-20 h-20 bg-red-700 rounded-full flex items-center justify-center text-3xl transition-all duration-300 transform hover:bg-red-600 focus:outline-none focus:ring-4 focus:ring-red-500/50 disabled:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+             >
+               🤫
+            </button>
+        </div>
+        <div className="flex items-center justify-center mt-4 space-x-2 text-sm text-gray-400">
+          <label htmlFor="continuous-mode" className="cursor-pointer">Continuous Conversation</label>
+          <input
+            id="continuous-mode"
+            type="checkbox"
+            checked={isContinuousMode}
+            onChange={(e) => setIsContinuousMode(e.target.checked)}
+            className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-600 ring-offset-gray-800 focus:ring-2 cursor-pointer"
+          />
+        </div>
+        <p className="text-center text-gray-500 text-xs mt-2">💡 Tip: Click the mic while I'm speaking to interrupt.</p>
+      </footer>
     </main>
   );
 }
