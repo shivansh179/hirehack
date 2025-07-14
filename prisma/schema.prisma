@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+    url = "postgresql://postgres:univest123@localhost:5432/postgres"
+}
+
+model User {
+  id        String    @id @default(cuid())
+  clerkId   String?   @unique         // keep optional if some users come from Clerk
+  email     String    @unique
+  password  String?                   // <- NEW: hashed password
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  resumes   Resume[]
+}
+
+
+model Resume {
+  id                String             @id @default(cuid())
+  fileName          String
+  resumeText        String
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  userId            String
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interviewSessions InterviewSession[]
+
+  @@index([userId])
+}
+
+model InterviewSession {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  messages  Json     @default("[]")
+  resumeId  String
+  resume    Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@index([resumeId])
+}
