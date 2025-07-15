@@ -1,7 +1,7 @@
 // pages/api/auth/signup.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import bcrypt from 'bcryptjs';
-import prisma from '@/lib/prisma';
+import {prisma} from '@/lib/prisma';
 
 type ApiResponse =
   | { ok: true; data: { email: string } }

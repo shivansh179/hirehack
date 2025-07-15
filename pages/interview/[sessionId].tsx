@@ -2,7 +2,7 @@
 'use client';
 
 import { GetServerSideProps } from 'next';
-import prisma from '../../lib/prisma';
+import { prisma } from '../../lib/prisma'; // Corrected Import
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { verifyJwtToken } from '../../lib/auth';
 import { useRouter } from 'next/router';

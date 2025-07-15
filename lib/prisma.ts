@@ -12,4 +12,5 @@ const prismaBase = globalForPrisma.prisma || new PrismaClient();
 // The Accelerate extension is still applied in the same way.
 export const prisma = prismaBase.$extends(withAccelerate());
 
+
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prismaBase;
