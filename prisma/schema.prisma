@@ -9,9 +9,8 @@ datasource db {
 
 model User {
   id        String    @id @default(cuid())
-  clerkId   String?   @unique         // keep optional if some users come from Clerk
   email     String    @unique
-  password  String?                   // <- NEW: hashed password
+  password  String  // CORRECT: No question mark
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   resumes   Resume[]

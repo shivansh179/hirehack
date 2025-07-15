@@ -1,3 +1,4 @@
+// pages/api/auth/signin.ts
 import { NextApiRequest, NextApiResponse } from 'next';
 import prisma from '../../../lib/prisma';
 import bcrypt from 'bcryptjs';
@@ -13,7 +14,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { email, password } = req.body;
     const user = await prisma.user.findUnique({ where: { email } });
 
-    if (!user || !(await bcrypt.compare(password, user.password))) {
+    // This multi-part check is the definitive fix for the build error.
+    // 1. Check if a user was found at all.
+    // 2. IMPORTANT: Check if that user actually has a password field. This tells TypeScript
+    //    that in the next step, user.password cannot be null.
+    if (!user || !user.password) {
+        return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    // Now, TypeScript knows user.password is a string, so the build will pass.
+    const passwordIsValid = await bcrypt.compare(password, user.password);
+
+    if (!passwordIsValid) {
         return res.status(401).json({ error: 'Invalid email or password.' });
     }
 

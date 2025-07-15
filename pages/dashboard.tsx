@@ -1,6 +1,6 @@
 import { GetServerSideProps } from 'next';
 import prisma from '../lib/prisma';
-import type { Resume } from '@prisma/client';
+import { Resume } from '@prisma/client/edge';
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import { verifyJwtToken } from '../lib/auth';
@@ -109,7 +109,9 @@ export default function Dashboard({ resumes: initialResumes, user }: DashboardPr
                 <div key={resume.id} className="bg-gray-800 p-4 rounded-lg flex justify-between items-center">
                     <div>
                         <p className="font-bold">{resume.fileName}</p>
-                        <p className="text-sm text-gray-400">Uploaded on {new Date(resume.createdAt).toLocaleDateString()}</p>
+                        <p className="text-sm text-gray-400">
+                        Uploaded on {new Date(resume.createdAt).toISOString().slice(0, 10)}
+                        </p>
                     </div>
                     <button
                         onClick={() => startInterview(resume.id)}

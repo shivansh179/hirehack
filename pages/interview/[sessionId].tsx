@@ -1,11 +1,16 @@
+// pages/interview/[sessionId].tsx
 'use client';
 
 import { GetServerSideProps } from 'next';
 import prisma from '../../lib/prisma';
 import { useEffect, useRef, useState, useCallback } from 'react';
-import Link from 'next/link';
 import { verifyJwtToken } from '../../lib/auth';
 import { useRouter } from 'next/router';
+
+// Import the newly created components
+import { InterviewHeader } from '../../components/InterviewHeader';
+import { StatusIndicator } from '../../components/StatusIndicator';
+import { ChatBubble } from '../../components/ChatBubble';
 
 type Status = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 type Message = {
@@ -20,59 +25,7 @@ type InterviewProps = {
   error?: string;
 };
 
-// --- COMPONENTS ---
-
-const Header = ({ userEmail }: {userEmail: string}) => {
-    const router = useRouter();
-    const handleSignOut = async () => {
-        await fetch('/api/auth/signout');
-        router.push('/sign-in');
-    };
-    return (
-        <header className="flex-shrink-0 p-4 flex justify-between items-center border-b border-gray-700/50">
-            <Link href="/dashboard"><div className="text-blue-400 hover:underline">← Dashboard</div></Link>
-            <h1 className="text-xl md:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-pink-500">
-                AI Interview in Progress
-            </h1>
-            <div className="flex items-center gap-4">
-                <span className="text-gray-300 hidden sm:inline">{userEmail}</span>
-                <button onClick={handleSignOut} className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded-md text-sm">Sign Out</button>
-            </div>
-      </header>
-    )
-}
-
-const StatusIndicator = ({ status }: { status: Status }) => {
-  const statusInfo = {
-    idle: { icon: '💬', text: 'Ready for your response', color: 'text-gray-400' },
-    listening: { icon: '🎤', text: 'Listening...', color: 'text-blue-400' },
-    thinking: { icon: '🤔', text: 'Thinking...', color: 'text-purple-400' },
-    speaking: { icon: '🗣️', text: 'Speaking...', color: 'text-orange-400' },
-    error: { icon: '❌', text: 'Error', color: 'text-red-400' },
-  };
-  const current = statusInfo[status];
-  return <p className={`text-sm text-center ${current.color}`}>{current.icon} {current.text}</p>;
-};
-
-const ChatBubble = ({ message }: { message: Message }) => {
-  const isUser = message.sender === 'user';
-  return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`p-4 rounded-2xl max-w-lg md:max-w-2xl transition-all duration-300 ${
-          isUser
-            ? 'bg-blue-600 rounded-br-none'
-            : 'bg-gray-700 rounded-bl-none'
-        }`}
-      >
-        <p className="text-white leading-relaxed whitespace-pre-wrap">{message.text}</p>
-      </div>
-    </div>
-  );
-};
-
-// --- MAIN COMPONENT ---
-
+// Main component starts here, all helper components are gone from this file.
 export default function InterviewPage({ sessionId, initialMessages, resumeText, userEmail, error: serverError }: InterviewProps) {
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string>(serverError || '');
@@ -127,7 +80,7 @@ export default function InterviewPage({ sessionId, initialMessages, resumeText, 
     if (utteranceQueue.current.length > 0) {
       const utterance = utteranceQueue.current.shift();
       if (utterance) {
-        setStatus('speaking'); // Set status right before speaking.
+        setStatus('speaking');
         if (voiceRef.current) utterance.voice = voiceRef.current;
         window.speechSynthesis.speak(utterance);
       }
@@ -139,23 +92,16 @@ export default function InterviewPage({ sessionId, initialMessages, resumeText, 
   const queueAndSpeak = useCallback((text: string) => {
     const cleanText = text.replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]|\*)/g, '').trim();
     if (!cleanText) return;
-    
     const sentences = cleanText.match(/[^.!?\n]+[.!?\n]?/g) || [cleanText];
-
-    // FIX 1: Always cancel any previous speech to prevent overlap. This is a crucial reset.
     window.speechSynthesis.cancel();
-    
     utteranceQueue.current = sentences.map((sentence) => {
         const u = new SpeechSynthesisUtterance(sentence.trim());
         u.pitch = 1.0;
         u.rate = 1.0;
-        u.onend = speakNextUtterance; // Simpler onend handler.
+        u.onend = speakNextUtterance;
         return u;
     });
-
-    // FIX 2: Unconditionally start the speaking process. Don't check the state.
     speakNextUtterance();
-
   }, [speakNextUtterance]);
 
   const saveConversation = useCallback(async (updatedMessages: Message[]) => {
@@ -192,13 +138,10 @@ export default function InterviewPage({ sessionId, initialMessages, resumeText, 
         const data = await res.json();
         throw new Error(data.error || 'API Error');
       }
-
       const { text: geminiText } = await res.json();
-      
       const finalMessages = [...newMessages, { sender: 'gemini', text: geminiText } as Message];
       setMessages(finalMessages);
-      
-      queueAndSpeak(geminiText); // This will now correctly trigger the audio.
+      queueAndSpeak(geminiText);
       await saveConversation(finalMessages);
 
     } catch (e: any) {
@@ -221,15 +164,8 @@ export default function InterviewPage({ sessionId, initialMessages, resumeText, 
     };
     window.speechSynthesis.onvoiceschanged = setVoice;
     setVoice();
-
-    // Re-linking the callbacks that depend on each other.
-    // This empty effect with dependencies is a way to ensure React's dependency checks are satisfied
-    // for complex interconnected callbacks without creating infinite loops.
-    // It signals to React that sendToGemini should be aware of changes to handleListen's identity, and vice versa.
-    // No action is needed inside, the dependency array is the key part.
   }, []);
 
-  // Use a separate effect to scroll to the bottom when messages change
   useEffect(() => {
     if (chatContainerRef.current) {
         chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
@@ -257,7 +193,6 @@ export default function InterviewPage({ sessionId, initialMessages, resumeText, 
       return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-8">
             <p className="text-red-400 text-xl mb-4">{serverError}</p>
-            <Link href="/dashboard"><div className="px-4 py-2 bg-blue-600 rounded-md">Back to Dashboard</div></Link>
         </div>
       )
   }
@@ -268,7 +203,7 @@ export default function InterviewPage({ sessionId, initialMessages, resumeText, 
 
   return (
     <main className="flex flex-col h-screen bg-gradient-to-br from-gray-900 via-purple-950 to-black text-white font-sans">
-      <Header userEmail={userEmail} />
+      <InterviewHeader userEmail={userEmail} />
       <div className="flex-grow flex-col justify-center items-center"><StatusIndicator status={status} /></div>
 
       <div ref={chatContainerRef} className="flex-grow p-4 md:p-6 space-y-6 overflow-y-auto">
@@ -312,16 +247,12 @@ export const getServerSideProps: GetServerSideProps = async (ctx) => {
   if (!verifiedToken?.userId) {
     return { redirect: { destination: '/sign-in', permanent: false } };
   }
-
   try {
     const session = await prisma.interviewSession.findUnique({
       where: { id: sessionId },
       include: {
         resume: {
-          select: {
-            resumeText: true,
-            userId: true,
-          },
+          select: { resumeText: true, userId: true, },
         },
       },
     });
