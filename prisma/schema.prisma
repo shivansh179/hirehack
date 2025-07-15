@@ -1,18 +1,16 @@
-// prisma/schema.prisma
-
-// REMOVE the 'generator accelerate' block. It's not needed.
 generator client {
   provider        = "prisma-client-js"
-  previewFeatures = ["driverAdapters"] // Add this for Edge compatibility
+  // This enables compatibility with Vercel's Edge environment
+  previewFeatures = ["driverAdapters"] 
 }
 
 datasource db {
   provider = "postgresql"
+  // This flexible setup reads DATABASE_URL from the environment
   url      = env("DATABASE_URL")
 }
 
-
-// Your models (User, Resume, InterviewSession) remain unchanged.
+// Your User, Resume, and InterviewSession models remain the same
 model User {
   id        String    @id @default(cuid())
   email     String    @unique
@@ -31,7 +29,6 @@ model Resume {
   userId            String
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   interviewSessions InterviewSession[]
-
   @@index([userId])
 }
 
@@ -42,6 +39,5 @@ model InterviewSession {
   messages  Json     @default("[]")
   resumeId  String
   resume    Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
-
   @@index([resumeId])
 }
