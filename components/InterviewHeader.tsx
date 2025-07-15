@@ -11,7 +11,7 @@ export const InterviewHeader = ({ userEmail }: {userEmail: string}) => {
     };
     return (
         <header className="flex-shrink-0 p-4 flex justify-between items-center border-b border-gray-700/50">
-            <Link href="/dashboard"><a className="text-blue-400 hover:underline">← Dashboard</a></Link>
+            <Link href="/dashboard"><div className="text-blue-400 hover:underline">← Dashboard</div></Link>
             <h1 className="text-xl md:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-pink-500">
                 AI Interview in Progress
             </h1>

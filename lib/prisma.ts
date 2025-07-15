@@ -1,11 +1,15 @@
+// lib/prisma.ts
 import { PrismaClient } from '@prisma/client';
+import { withAccelerate } from '@prisma/extension-accelerate';
 
-declare global {
-  var prisma: PrismaClient | undefined;
+const globalForPrisma = globalThis as unknown as {
+    prisma: PrismaClient | undefined
 }
 
-const prisma = global.prisma || new PrismaClient();
+// The Prisma Client is now imported from the standard location
+const prismaBase = globalForPrisma.prisma || new PrismaClient();
 
-if (process.env.NODE_ENV === 'development') global.prisma = prisma;
+// The Accelerate extension is still applied in the same way.
+export const prisma = prismaBase.$extends(withAccelerate());
 
-export default prisma;
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prismaBase;

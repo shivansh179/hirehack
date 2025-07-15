@@ -1,21 +1,26 @@
+// prisma/schema.prisma
+
+// REMOVE the 'generator accelerate' block. It's not needed.
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"] // Add this for Edge compatibility
 }
 
 datasource db {
   provider = "postgresql"
-    url = "postgresql://postgres:univest123@localhost:5432/postgres"
+  url      = env("DATABASE_URL")
 }
 
+
+// Your models (User, Resume, InterviewSession) remain unchanged.
 model User {
   id        String    @id @default(cuid())
   email     String    @unique
-  password  String  // CORRECT: No question mark
+  password  String
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   resumes   Resume[]
 }
-
 
 model Resume {
   id                String             @id @default(cuid())
