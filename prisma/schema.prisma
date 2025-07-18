@@ -1,23 +1,24 @@
 generator client {
   provider        = "prisma-client-js"
-  // This enables compatibility with Vercel's Edge environment
-  previewFeatures = ["driverAdapters"] 
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
   provider = "postgresql"
-  // This flexible setup reads DATABASE_URL from the environment
-  url      = env("DATABASE_URL")
+  url      = "postgres://964d2ea6db8734edba11b29ce936776cb250270f1e49b9e18e3df5ed6c471ae3:sk_VjP_Bw6kn3ADzhQ1IzQv3@db.prisma.io:5432/?sslmode=require"
 }
 
-// Your User, Resume, and InterviewSession models remain the same
 model User {
-  id        String    @id @default(cuid())
-  email     String    @unique
-  password  String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  resumes   Resume[]
+  id              String    @id @default(cuid())
+  email           String    @unique
+  password        String
+  name            String?
+  // Ensure these field names are spelled exactly like this
+  experienceLevel String?
+  careerGoal      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  resumes         Resume[]
 }
 
 model Resume {
@@ -27,17 +28,25 @@ model Resume {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   userId            String
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   interviewSessions InterviewSession[]
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
 }
 
+
 model InterviewSession {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  messages  Json     @default("[]")
-  resumeId  String
-  resume    Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  id              String   @id @default(cuid())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  messages        Json     @default("[]")
+  resumeId        String
+  resume          Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  status          String   @default("IN_PROGRESS") // New field
+  score           Int?                                  // New field, optional
+  durationMinutes Int?                                  // New field, optional
+  feedback        String?  @db.Text 
+
   @@index([resumeId])
 }
+

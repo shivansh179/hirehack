@@ -1,7 +1,8 @@
 // components/StatusIndicator.tsx
 import React from 'react';
 
-type Status = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
+// FIX: Added 'finishing' to the Status type to match the interview page.
+type Status = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error' | 'finishing';
 
 export const StatusIndicator = ({ status }: { status: Status }) => {
     const statusInfo = {
@@ -10,6 +11,7 @@ export const StatusIndicator = ({ status }: { status: Status }) => {
       thinking: { icon: '🤔', text: 'Thinking...', color: 'text-purple-400' },
       speaking: { icon: '🗣️', text: 'Speaking...', color: 'text-orange-400' },
       error: { icon: '❌', text: 'Error', color: 'text-red-400' },
+      finishing: { icon: '🏁', text: 'Finishing...', color: 'text-green-400' },
     };
     const current = statusInfo[status];
     return <p className={`text-sm text-center ${current.color}`}>{current.icon} {current.text}</p>;

@@ -1,132 +1,127 @@
-// pages/dashboard.tsx
 import { GetServerSideProps } from 'next';
-import { prisma } from '../lib/prisma'; // Corrected Import
-import type { Resume } from '@prisma/client';
-import { useState } from 'react';
-import { useRouter } from 'next/router';
+import { prisma } from '../lib/prisma';
 import { verifyJwtToken } from '../lib/auth';
+import type { InterviewSession, Resume, User } from '@prisma/client';
+import { useRouter } from 'next/router';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Badge } from '../components/ui/Badge';
+import { PlusCircle, User as UserIcon, LogOut } from 'lucide-react';
 
-// ... the rest of the file is correct and remains the same
+type EnrichedSession = InterviewSession & { resume: { fileName: string } };
 type DashboardProps = {
-  resumes: Resume[];
-  user: { email: string };
+    user: User;
+    sessions: EnrichedSession[];
 };
-const Header = ({ userEmail }: {userEmail: string}) => {
+
+export default function Dashboard({ user, sessions }: DashboardProps) {
     const router = useRouter();
     const handleSignOut = async () => {
         await fetch('/api/auth/signout');
         router.push('/sign-in');
     };
+
     return (
-        <header className="flex justify-between items-center p-4 border-b border-gray-700">
-            <h1 className="text-2xl font-bold">Your Dashboard</h1>
-            <div className="flex items-center gap-4">
-                <span className="text-gray-300">{userEmail}</span>
-                <button onClick={handleSignOut} className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded-md text-sm">Sign Out</button>
-            </div>
-        </header>
-    )
-}
-export default function Dashboard({ resumes: initialResumes, user }: DashboardProps) {
-  const [resumes, setResumes] = useState(initialResumes);
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState('');
-  const router = useRouter();
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    setError('');
-    const formData = new FormData();
-    formData.append('resume', file);
-    try {
-      const res = await fetch('/api/resume/upload', {
-        method: 'POST',
-        body: formData,
-      });
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Upload failed');
-      }
-      const newResumeData = await res.json();
-      setResumes((prev) => [...prev, newResumeData]);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setUploading(false);
-      if (event.target) event.target.value = '';
-    }
-  };
-  const startInterview = async (resumeId: string) => {
-    try {
-      const res = await fetch('/api/interview/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resumeId }),
-      });
-      if (!res.ok) throw new Error('Failed to start interview');
-      const { sessionId } = await res.json();
-      router.push(`/interview/${sessionId}`);
-    } catch (err: any) {
-      setError(err.message || 'Could not start a new interview session. Please try again.');
-    }
-  };
-  return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      <Header userEmail={user.email} />
-      <main className="p-8">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-semibold mb-6">Your Resumes</h2>
-          {error && <p className="bg-red-900/50 text-red-300 p-3 rounded-md mb-4">{error}</p>}
-          <div className="bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
-            <h3 className="text-xl font-bold mb-4">Upload a New Resume</h3>
-            <p className="text-gray-400 mb-4">Upload your resume in PDF format to get started.</p>
-            <input
-              type="file"
-              accept=".pdf"
-              onChange={handleFileUpload}
-              disabled={uploading}
-              className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 disabled:opacity-50"
-            />
-            {uploading && <p className="mt-2 text-blue-400 animate-pulse">Uploading and processing...</p>}
-          </div>
-          <div className="space-y-4">
-            {resumes.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">You haven't uploaded any resumes yet.</p>
-            ) : (
-                resumes.map((resume) => (
-                <div key={resume.id} className="bg-gray-800 p-4 rounded-lg flex justify-between items-center">
-                    <div>
-                        <p className="font-bold">{resume.fileName}</p>
-                        <p className="text-sm text-gray-400">Uploaded on {new Date(resume.createdAt).toLocaleDateString()}</p>
-                    </div>
-                    <button
-                        onClick={() => startInterview(resume.id)}
-                        className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-full font-semibold transition-transform transform hover:scale-105"
-                    >
-                        ▶️ Start Interview
-                    </button>
+        <div className="min-h-screen bg-gray-900 text-white p-4 sm:p-8">
+            <header className="flex justify-between items-center mb-8">
+                <div>
+                    <h1 className="text-3xl font-bold">Welcome, {user.name || 'User'}!</h1>
+                    <p className="text-gray-400">Here's your interview dashboard.</p>
                 </div>
-                ))
-            )}
-          </div>
+                <div className="flex items-center gap-4">
+                    <Button variant="secondary" onClick={() => router.push('/profile')}><UserIcon className="mr-2 h-4 w-4" />Profile</Button>
+                    <Button variant="danger" onClick={handleSignOut}><LogOut className="mr-2 h-4 w-4" />Sign Out</Button>
+                </div>
+            </header>
+
+            <main className="space-y-8">
+                <Card className="bg-blue-900/30 border-blue-700">
+                    <CardHeader className="flex-row items-center justify-between">
+                        <div className="space-y-1.5">
+                            <CardTitle>Start a New Mock Interview</CardTitle>
+                            <CardDescription>Practice makes perfect. Let's get you ready!</CardDescription>
+                        </div>
+                        <Button onClick={() => router.push('/interview/new')}>
+                            <PlusCircle className="mr-2 h-4 w-4" /> New Interview
+                        </Button>
+                    </CardHeader>
+                </Card>
+
+                <div>
+                    <h2 className="text-2xl font-semibold mb-4">Past Interviews</h2>
+                    {sessions.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {sessions.map(session => (
+                                <Card key={session.id}>
+                                    <CardHeader>
+                                        <CardTitle>Interview on {new Date(session.createdAt).toLocaleDateString()}</CardTitle>
+                                        <CardDescription>Based on resume: {session.resume.fileName}</CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="flex items-center justify-between">
+                                        {session.status === 'COMPLETED' ? (
+                                            <div className="text-left">
+                                                <p className="text-gray-400 text-sm">Score</p>
+                                                <p className="text-3xl font-bold text-green-400">{session.score}/10</p>
+                                            </div>
+                                        ) : (
+                                            <Badge className="bg-yellow-500">In Progress</Badge>
+                                        )}
+                                        <p className="text-sm text-gray-400">{session.durationMinutes} min</p>
+                                    </CardContent>
+                                    <CardFooter>
+                                        <Button
+                                            onClick={() => router.push(session.status === 'COMPLETED' ? `/interview/${session.id}/results` : `/interview/${session.id}`)}
+                                            className="w-full"
+                                            variant={session.status === 'COMPLETED' ? 'secondary' : 'primary'}
+                                        >
+                                            {session.status === 'COMPLETED' ? 'View Results' : 'Continue Interview'}
+                                        </Button>
+                                    </CardFooter>
+                                </Card>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="text-center py-16 border-2 border-dashed border-gray-700 rounded-lg">
+                            <p className="text-gray-500">You haven't completed any interviews yet.</p>
+                            <p className="text-gray-500">Click "New Interview" to get started!</p>
+                        </div>
+                    )}
+                </div>
+            </main>
         </div>
-      </main>
-    </div>
-  );
+    );
 }
+
 export const getServerSideProps: GetServerSideProps = async (ctx) => {
-  const token = ctx.req.cookies.token;
-  const verifiedToken = await verifyJwtToken(token);
-  if (!verifiedToken?.userId) {
-    return { redirect: { destination: '/sign-in', permanent: false } };
-  }
-  const resumes = await prisma.resume.findMany({
-    where: { userId: verifiedToken.userId as string },
-    orderBy: { createdAt: 'desc' },
-  });
-  return { props: { 
-        resumes: JSON.parse(JSON.stringify(resumes)),
-        user: { email: verifiedToken.email }
-    } };
+    const token = ctx.req.cookies.token;
+    const verifiedToken = await verifyJwtToken(token);
+
+    if (!verifiedToken?.userId) {
+        return { redirect: { destination: '/sign-in', permanent: false } };
+    }
+
+    const userId = verifiedToken.userId as string;
+
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+    });
+
+    if (!user) {
+        // This can happen if the user was deleted but the cookie remains
+        return { redirect: { destination: '/sign-in', permanent: false } };
+    }
+
+    const sessions = await prisma.interviewSession.findMany({
+        where: { resume: { userId: userId } },
+        include: { resume: { select: { fileName: true } } },
+        orderBy: { createdAt: 'desc' },
+    });
+
+    // We must use JSON.parse(JSON.stringify(...)) to serialize Date objects
+    return { 
+        props: { 
+            user: JSON.parse(JSON.stringify(user)), 
+            sessions: JSON.parse(JSON.stringify(sessions)) 
+        } 
+    };
 };

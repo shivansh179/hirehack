@@ -296,8 +296,12 @@
 
 
 import Link from 'next/link';
+import { useEffect } from 'react';
+
 
 export default function Home() {
+
+
   return (
     <main className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 via-blue-950 to-black text-white p-8">
       <div className="text-center">
